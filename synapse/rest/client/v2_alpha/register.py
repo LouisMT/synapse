@@ -260,16 +260,6 @@ class RegisterRestServlet(RestServlet):
         if desired_username is not None:
             desired_username = desired_username.lower()
 
-        # == Shared Secret Registration == (e.g. create new user scripts)
-        if 'mac' in body:
-            # FIXME: Should we really be determining if this is shared secret
-            # auth based purely on the 'mac' key?
-            result = yield self._do_shared_secret_registration(
-                desired_username, desired_password, body
-            )
-            defer.returnValue((200, result))  # we throw for non 200 responses
-            return
-
         # == Normal User Registration == (everyone else)
         if not self.hs.config.enable_registration:
             raise SynapseError(403, "Registration has been disabled")
@@ -443,55 +433,6 @@ class RegisterRestServlet(RestServlet):
             username, as_token
         )
         defer.returnValue((yield self._create_registration_details(user_id, body)))
-
-    @defer.inlineCallbacks
-    def _do_shared_secret_registration(self, username, password, body):
-        if not self.hs.config.registration_shared_secret:
-            raise SynapseError(400, "Shared secret registration is not enabled")
-        if not username:
-            raise SynapseError(
-                400, "username must be specified", errcode=Codes.BAD_JSON,
-            )
-        if not password:
-            raise SynapseError(
-                400, "password must be specified", errcode=Codes.BAD_JSON,
-            )
-
-        # use the username from the original request rather than the
-        # downcased one in `username` for the mac calculation
-        user = body["username"].encode("utf-8")
-        admin = body.get("admin", None)
-        got_mac = body["mac"]
-
-        # Its important to check as we use null bytes as HMAC field separators
-        if b"\x00" in user:
-            raise SynapseError(400, "Invalid user")
-        if b"\x00" in password:
-            raise SynapseError(400, "Invalid password")
-
-        want_mac = hmac.new(
-            key=self.hs.config.registration_shared_secret.encode(),
-            digestmod=sha1,
-        )
-        want_mac.update(user)
-        want_mac.update(b"\x00")
-        want_mac.update(password)
-        want_mac.update(b"\x00")
-        want_mac.update(b"admin" if admin else b"notadmin")
-        want_mac = want_mac.hexdigest()
-
-        if not compare_digest(want_mac, got_mac):
-            raise SynapseError(
-                403, "HMAC incorrect",
-            )
-
-        (user_id, _) = yield self.registration_handler.register(
-            localpart=username, password=password, admin=bool(admin),
-            generate_token=False,
-        )
-
-        result = yield self._create_registration_details(user_id, body)
-        defer.returnValue(result)
 
     @defer.inlineCallbacks
     def _register_email_threepid(self, user_id, threepid, token, bind_email):
