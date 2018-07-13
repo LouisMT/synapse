@@ -13,36 +13,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import datetime
-
-from twisted.internet import defer
-
-from .persistence import TransactionActions
-from .units import Transaction, Edu
-
-from synapse.api.errors import HttpResponseException, FederationDeniedError
-from synapse.util import logcontext, PreserveLoggingContext
-from synapse.util.retryutils import NotRetryingDestination, get_retry_limiter
-from synapse.util.metrics import measure_func
-from synapse.handlers.presence import format_user_presence_state, get_interested_remotes
-import synapse.metrics
-from synapse.metrics import LaterGauge
-from synapse.metrics import (
-    sent_edus_counter,
-    sent_transactions_counter,
-    events_processed_counter,
-)
-
-from prometheus_client import Counter
+import logging
 
 from six import itervalues
 
-import logging
+from prometheus_client import Counter
 
+from twisted.internet import defer
+
+import synapse.metrics
+from synapse.api.errors import FederationDeniedError, HttpResponseException
+from synapse.handlers.presence import format_user_presence_state, get_interested_remotes
+from synapse.metrics import (
+    LaterGauge,
+    events_processed_counter,
+    sent_edus_counter,
+    sent_transactions_counter,
+)
+from synapse.util import PreserveLoggingContext, logcontext
+from synapse.util.metrics import measure_func
+from synapse.util.retryutils import NotRetryingDestination, get_retry_limiter
+
+from .persistence import TransactionActions
+from .units import Edu, Transaction
 
 logger = logging.getLogger(__name__)
 
-sent_pdus_destination_dist = Counter(
-    "synapse_federation_transaction_queue_sent_pdu_destinations", ""
+sent_pdus_destination_dist_count = Counter(
+    "synapse_federation_client_sent_pdu_destinations:count", ""
+)
+sent_pdus_destination_dist_total = Counter(
+    "synapse_federation_client_sent_pdu_destinations:total", ""
 )
 
 
@@ -279,7 +280,8 @@ class TransactionQueue(object):
         if not destinations:
             return
 
-        sent_pdus_destination_dist.inc(len(destinations))
+        sent_pdus_destination_dist_total.inc(len(destinations))
+        sent_pdus_destination_dist_count.inc()
 
         for destination in destinations:
             self.pending_pdus_by_dest.setdefault(destination, []).append(

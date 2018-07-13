@@ -13,19 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import functools
-import time
 import gc
+import logging
 import os
 import platform
-import attr
+import time
 
-from prometheus_client import Gauge, Histogram, Counter
-from prometheus_client.core import GaugeMetricFamily, REGISTRY
+import attr
+from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client.core import REGISTRY, GaugeMetricFamily
 
 from twisted.internet import reactor
-
 
 logger = logging.getLogger(__name__)
 
@@ -140,14 +139,15 @@ gc_time = Histogram(
 class GCCounts(object):
 
     def collect(self):
-        cm = GaugeMetricFamily("python_gc_counts", "GC cycle counts", labels=["gen"])
+        cm = GaugeMetricFamily("python_gc_counts", "GC object counts", labels=["gen"])
         for n, m in enumerate(gc.get_count()):
             cm.add_metric([str(n)], m)
 
         yield cm
 
 
-REGISTRY.register(GCCounts())
+if not running_on_pypy:
+    REGISTRY.register(GCCounts())
 
 #
 # Twisted reactor metrics

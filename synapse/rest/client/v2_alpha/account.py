@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright 2015, 2016 OpenMarket Ltd
 # Copyright 2017 Vector Creations Ltd
+# Copyright 2018 New Vector Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,17 +16,21 @@
 # limitations under the License.
 import logging
 
+from six.moves import http_client
+
 from twisted.internet import defer
 
 from synapse.api.auth import has_access_token
 from synapse.api.constants import LoginType
 from synapse.api.errors import Codes, SynapseError
 from synapse.http.servlet import (
-    RestServlet, assert_params_in_request,
+    RestServlet,
+    assert_params_in_request,
     parse_json_object_from_request,
 )
 from synapse.util.msisdn import phone_number_to_msisdn
 from synapse.util.threepids import check_3pid_allowed
+
 from ._base import client_v2_patterns, interactive_auth_handler
 
 logger = logging.getLogger(__name__)
@@ -186,13 +191,20 @@ class DeactivateAccountRestServlet(RestServlet):
     @defer.inlineCallbacks
     def on_POST(self, request):
         body = parse_json_object_from_request(request)
+        erase = body.get("erase", False)
+        if not isinstance(erase, bool):
+            raise SynapseError(
+                http_client.BAD_REQUEST,
+                "Param 'erase' must be a boolean, if given",
+                Codes.BAD_JSON,
+            )
 
         requester = yield self.auth.get_user_by_req(request)
 
         # allow ASes to dectivate their own users
         if requester.app_service:
             yield self._deactivate_account_handler.deactivate_account(
-                requester.user.to_string()
+                requester.user.to_string(), erase,
             )
             defer.returnValue((200, {}))
 
@@ -200,7 +212,7 @@ class DeactivateAccountRestServlet(RestServlet):
             requester, body, self.hs.get_ip_from_request(request),
         )
         yield self._deactivate_account_handler.deactivate_account(
-            requester.user.to_string(),
+            requester.user.to_string(), erase,
         )
         defer.returnValue((200, {}))
 
